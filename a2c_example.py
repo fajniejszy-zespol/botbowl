@@ -26,7 +26,7 @@ value_loss_coef = 0.5
 max_grad_norm = 0.05
 log_interval = 50
 save_interval = 500
-ppcg = False
+ppcg = True
 
 # Environment
 #env_name = "FFAI-1-v2"
