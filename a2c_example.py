@@ -16,7 +16,7 @@ import random
 import time
 
 # Training configuration
-num_steps = 1000000
+num_steps = 10000
 num_processes = 8
 steps_per_update = 20
 learning_rate = 0.001
@@ -26,12 +26,13 @@ value_loss_coef = 0.5
 max_grad_norm = 0.05
 log_interval = 50
 save_interval = 500
+
 ppcg = True
 
 # Environment
 #env_name = "FFAI-1-v2"
 env_name = "FFAI-3-v2"
-num_steps = 10000000 # Increase training time
+num_steps = 10000 # Increase training time
 log_interval = 100
 #env_name = "FFAI-5-v2"
 #num_steps = 100000000 # Increase training time
