@@ -11,15 +11,12 @@ import torch.nn.functional as F
 import matplotlib.pyplot as plt
 import sys
 from a2c_agent import A2CAgent
-from vecEnv import VecEnv
-from cnn_policy import CNNPolicy
 import ffai
 import random
 import time
-import numpy as np
 
 # Training configuration
-num_steps = 1000000
+num_steps = 10000
 num_processes = 8
 steps_per_update = 20
 learning_rate = 0.001
@@ -29,12 +26,13 @@ value_loss_coef = 0.5
 max_grad_norm = 0.05
 log_interval = 50
 save_interval = 500
-ppcg = False
+
+ppcg = True
 
 # Environment
 #env_name = "FFAI-1-v2"
 env_name = "FFAI-3-v2"
-num_steps = 10000000 # Increase training time
+num_steps = 10000 # Increase training time
 log_interval = 100
 #env_name = "FFAI-5-v2"
 #num_steps = 100000000 # Increase training time
@@ -126,6 +124,241 @@ class Memory(object):
         self.returns[-1] = next_value
         for step in reversed(range(self.rewards.size(0))):
             self.returns[step] = self.returns[step + 1] * gamma * self.masks[step] + self.rewards[step]
+
+
+class CNNPolicy(nn.Module):
+    def __init__(self, spatial_shape, non_spatial_inputs, hidden_nodes, kernels, actions):
+        super(CNNPolicy, self).__init__()
+
+        # Spatial input stream
+        self.conv1 = nn.Conv2d(spatial_shape[0], out_channels=kernels[0], kernel_size=3, stride=1, padding=1)
+        self.conv2 = nn.Conv2d(in_channels=kernels[0], out_channels=kernels[1], kernel_size=3, stride=1, padding=1)
+
+        # Non-spatial input stream
+        self.linear0 = nn.Linear(non_spatial_inputs, hidden_nodes)
+
+        # Linear layers
+        stream_size = kernels[1] * spatial_shape[1] * spatial_shape[2]
+        stream_size += hidden_nodes
+        self.linear1 = nn.Linear(stream_size, hidden_nodes)
+
+        # The outputs
+        self.critic = nn.Linear(hidden_nodes, 1)
+        self.actor = nn.Linear(hidden_nodes, actions)
+
+        self.train()
+        self.reset_parameters()
+
+    def reset_parameters(self):
+        relu_gain = nn.init.calculate_gain('relu')
+        self.conv1.weight.data.mul_(relu_gain)
+        self.conv2.weight.data.mul_(relu_gain)
+        self.linear0.weight.data.mul_(relu_gain)
+        self.linear1.weight.data.mul_(relu_gain)
+        self.actor.weight.data.mul_(relu_gain)
+        self.critic.weight.data.mul_(relu_gain)
+
+    def forward(self, spatial_input, non_spatial_input):
+        """
+        The forward functions defines how the data flows through the graph (layers)
+        """
+        # Spatial input through two convolutional layers
+        x1 = self.conv1(spatial_input)
+        x1 = F.relu(x1)
+        x1 = self.conv2(x1)
+        x1 = F.relu(x1)
+
+        # Concatenate the input streams
+        flatten_x1 = x1.flatten(start_dim=1)
+
+        x2 = self.linear0(non_spatial_input)
+        x2 = F.relu(x2)
+
+        flatten_x2 = x2.flatten(start_dim=1)
+        concatenated = torch.cat((flatten_x1, flatten_x2), dim=1)
+
+        # Fully-connected layers
+        x3 = self.linear1(concatenated)
+        x3 = F.relu(x3)
+        #x2 = self.linear2(x2)
+        #x2 = F.relu(x2)
+
+        # Output streams
+        value = self.critic(x3)
+        actor = self.actor(x3)
+
+        # return value, policy
+        return value, actor
+
+    def act(self, spatial_inputs, non_spatial_input, action_mask):
+        values, action_probs = self.get_action_probs(spatial_inputs, non_spatial_input, action_mask=action_mask)
+        actions = action_probs.multinomial(1)
+        return values, actions
+
+    def evaluate_actions(self, spatial_inputs, non_spatial_input, actions, actions_mask):
+        value, policy = self(spatial_inputs, non_spatial_input)
+        actions_mask = actions_mask.view(-1, 1, actions_mask.shape[2]).squeeze().bool()
+        policy[~actions_mask] = float('-inf')
+        log_probs = F.log_softmax(policy, dim=1)
+        probs = F.softmax(policy, dim=1)
+        action_log_probs = log_probs.gather(1, actions)
+        log_probs = torch.where(log_probs[None, :] == float('-inf'), torch.tensor(0.), log_probs)
+        dist_entropy = -(log_probs * probs).sum(-1).mean()
+        return action_log_probs, value, dist_entropy
+
+    def get_action_probs(self, spatial_input, non_spatial_input, action_mask):
+        values, actions = self(spatial_input, non_spatial_input)
+        # Masking step: Inspired by: http://juditacs.github.io/2018/12/27/masked-attention.html
+        if action_mask is not None:
+            actions[~action_mask] = float('-inf')
+        action_probs = F.softmax(actions, dim=1)
+        return values, action_probs
+
+
+def reward_function(env, info, shaped=False):
+    r = 0
+    for outcome in env.get_outcomes():
+        if not shaped and outcome.outcome_type != OutcomeType.TOUCHDOWN:
+            continue
+        team = None
+        if outcome.player is not None:
+            team = outcome.player.team
+        elif outcome.team is not None:
+            team = outcome.team
+        if team == env.own_team and outcome.outcome_type in rewards_own:
+            r += rewards_own[outcome.outcome_type]
+        if team == env.opp_team and outcome.outcome_type in rewards_opp:
+            r += rewards_opp[outcome.outcome_type]
+    if info['ball_progression'] > 0:
+        r += info['ball_progression'] * ball_progression_reward
+    return r
+
+def worker(remote, parent_remote, env, worker_id):
+    parent_remote.close()
+
+    steps = 0
+    tds = 0
+    tds_opp = 0
+    next_opp = ffai.make_bot('random')
+
+    while True:
+        command, data = remote.recv()
+        if command == 'step':
+            steps += 1
+            action, dif = data[0], data[1]
+            obs, reward, done, info = env.step(action)
+            tds_scored = info['touchdowns'] - tds
+            tds = info['touchdowns']
+            tds_opp_scored = info['opp_touchdowns'] - tds_opp
+            tds_opp = info['opp_touchdowns']
+            reward_shaped = reward_function(env, info, shaped=True)
+            ball_carrier = env.game.get_ball_carrier()
+            # PPCG
+            if dif < 1.0:
+                if ball_carrier and ball_carrier.team == env.game.state.home_team:
+                    extra_endzone_squares = int((1.0 - dif) * 25.0)
+                    distance_to_endzone = ball_carrier.position.x - 1
+                    if distance_to_endzone <= extra_endzone_squares:
+                        #reward_shaped += rewards_own[OutcomeType.TOUCHDOWN]
+                        env.game.state.stack.push(Touchdown(env.game, ball_carrier))
+            if done or steps >= reset_steps:
+                # If we  get stuck or something - reset the environment
+                if steps >= reset_steps:
+                    print("Max. number of steps exceeded! Consider increasing the number.")
+                done = True
+                env.opp_actor = next_opp
+                obs = env.reset()
+                steps = 0
+                tds = 0
+                tds_opp = 0
+            remote.send((obs, reward, reward_shaped, tds_scored, tds_opp_scored, done, info))
+        elif command == 'reset':
+            dif = data
+            steps = 0
+            tds = 0
+            tds_opp = 0
+            env.opp_actor = next_opp
+            obs = env.reset()
+            # set_difficulty(env, dif)
+            remote.send(obs)
+        elif command == 'render':
+            env.render()
+        elif command == 'swap':
+            next_opp = data
+        elif command == 'close':
+            break
+
+
+class VecEnv():
+    def __init__(self, envs):
+        """
+        envs: list of FFAI environments to run in subprocesses
+        """
+        self.closed = False
+        nenvs = len(envs)
+        self.remotes, self.work_remotes = zip(*[Pipe() for _ in range(nenvs)])
+
+        self.ps = [Process(target=worker, args=(work_remote, remote, env, envs.index(env)))
+                   for (work_remote, remote, env) in zip(self.work_remotes, self.remotes, envs)]
+
+        for p in self.ps:
+            p.daemon = True  # If the main process crashes, we should not cause things to hang
+            p.start()
+        for remote in self.work_remotes:
+            remote.close()
+
+    def step(self, actions, difficulty=1.0):
+        cumul_rewards = None
+        cumul_shaped_rewards = None
+        cumul_tds_scored = None
+        cumul_tds_opp_scored = None
+        cumul_dones = None
+        for remote, action in zip(self.remotes, actions):
+            remote.send(('step', [action, difficulty]))
+        results = [remote.recv() for remote in self.remotes]
+        obs, rews, rews_shaped, tds, tds_opp, dones, infos = zip(*results)
+        if cumul_rewards is None:
+            cumul_rewards = np.stack(rews)
+            cumul_shaped_rewards = np.stack(rews_shaped)
+            cumul_tds_scored = np.stack(tds)
+            cumul_tds_opp_scored = np.stack(tds_opp)
+        else:
+            cumul_rewards += np.stack(rews)
+            cumul_shaped_rewards += np.stack(rews_shaped)
+            cumul_tds_scored += np.stack(tds)
+            cumul_tds_opp_scored += np.stack(tds_opp)
+        if cumul_dones is None:
+            cumul_dones = np.stack(dones)
+        else:
+            cumul_dones |= np.stack(dones)
+        return np.stack(obs), cumul_rewards, cumul_shaped_rewards, cumul_tds_scored, cumul_tds_opp_scored, cumul_dones, infos
+
+    def reset(self, difficulty=1.0):
+        for remote in self.remotes:
+            remote.send(('reset', difficulty))
+        return np.stack([remote.recv() for remote in self.remotes])
+
+    def render(self):
+        for remote in self.remotes:
+            remote.send(('render', None))
+
+    def swap(self, agent):
+        for remote in self.remotes:
+            remote.send(('swap', agent))
+
+    def close(self):
+        if self.closed:
+            return
+
+        for remote in self.remotes:
+            remote.send(('close', None))
+        for p in self.ps:
+            p.join()
+        self.closed = True
+
+    @property
+    def num_envs(self):
+        return len(self.remotes)
 
 
 def main():
