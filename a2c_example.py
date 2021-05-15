@@ -29,13 +29,13 @@ value_loss_coef = 0.5
 max_grad_norm = 0.05
 log_interval = 50
 save_interval = 500
-ppcg = False
+ppcg = True
 
 # Environment
 #env_name = "FFAI-1-v2"
 env_name = "FFAI-3-v2"
 num_steps = 10000000 # Increase training time
-log_interval = 100
+log_interval = 1000
 #env_name = "FFAI-5-v2"
 #num_steps = 100000000 # Increase training time
 #log_interval = 1000
@@ -47,7 +47,7 @@ reset_steps = 5000  # The environment is reset after this many steps it gets stu
 selfplay = True  # Use this to enable/disable self-play
 selfplay_window = 1
 selfplay_save_steps = int(num_steps / 10)
-selfplay_swap_steps = selfplay_save_steps
+selfplay_swap_steps = int(selfplay_save_steps / 10)
 
 # Architecture
 num_hidden_nodes = 128
@@ -453,6 +453,45 @@ def main():
                 axs[3].set_xlim(left=0)
             fig.tight_layout()
             fig.savefig(f"plots/{model_name}{'_selfplay' if selfplay else ''}.png")
+            plt.close('all')
+            
+            # plot 2
+            n = 1
+            if selfplay:
+                n += 1
+            if ppcg:
+                n += 3
+            fig2, axs2 = plt.subplots(1, n, figsize=(4*n, 5))
+            axs2[0].ticklabel_format(axis="x", style="sci", scilimits=(0,0))
+            axs2[0].semilogy(log_steps, np.divide(log_win_rate, log_mean_reward))
+            axs2[0].set_title('Win rate/Reward')
+            axs2[0].set_xlim(left=0)
+            
+            if selfplay:
+                axs2[1].ticklabel_format(axis="x", style="sci", scilimits=(0,0))
+                axs2[1].semilogy(log_steps, np.divide(log_td_rate_opp, log_td_rate))
+                axs2[1].set_title('TD_rate/TD_rate_opp')
+                axs2[1].set_ylim(bottom=0.0)
+                axs2[1].set_xlim(left=0)
+            
+            if ppcg:
+                axs2[2].ticklabel_format(axis="x", style="sci", scilimits=(0, 0))
+                axs2[2].semilogy(log_steps, np.divide(log_td_rate, log_difficulty))
+                axs2[2].set_title('TD_rate/Difficulty')
+                axs2[2].set_xlim(left=0)
+                    
+                axs2[3].ticklabel_format(axis="x", style="sci", scilimits=(0, 0))
+                axs2[3].semilogy(log_steps, np.divide(log_win_rate, log_difficulty))
+                axs2[3].set_title('Win rate/Difficulty')
+                axs2[3].set_xlim(left=0)
+                
+                axs2[4].ticklabel_format(axis="x", style="sci", scilimits=(0, 0))
+                axs2[4].semilogy(log_steps, np.divide(log_mean_reward, log_difficulty))
+                axs2[4].set_title('Reward/Difficulty')
+                axs2[4].set_xlim(left=0)
+                
+            fig2.tight_layout()
+            fig2.savefig(f"plots/{model_name}_new_plots_{'_selfplay' if selfplay else ''}.png")
             plt.close('all')
 
 

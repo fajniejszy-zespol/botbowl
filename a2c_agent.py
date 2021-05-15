@@ -12,8 +12,8 @@ import matplotlib.pyplot as plt
 import sys
 
 # Architecture
-model_name = 'FFAI-v2'
-env_name = 'FFAI-v2'
+model_name = 'FFAI-v3'
+env_name = 'FFAI-v3'
 model_filename = "models/" + model_name
 log_filename = "logs/" + model_name + ".dat"
 
