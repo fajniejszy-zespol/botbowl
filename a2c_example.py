@@ -542,7 +542,7 @@ if __name__ == "__main__":
     pathlib.Path('sessions/' + str(SESSION_ID)).mkdir(parents=True, exist_ok=True)
     pathlib.Path('sessions/' + str(SESSION_ID) + '/logs').mkdir(parents=True, exist_ok=True)
     pathlib.Path('sessions/' + str(SESSION_ID) + '/models').mkdir(parents=True, exist_ok=True)
-    pathlib.Path('sessions/' + str(SESSION_ID) + '/plot').mkdir(parents=True, exist_ok=True)
+    pathlib.Path('sessions/' + str(SESSION_ID) + '/plots').mkdir(parents=True, exist_ok=True)
 
     print(f'Current session id: {SESSION_ID}')
     print(f'\tlogs:   {LOG_ROOT}')
