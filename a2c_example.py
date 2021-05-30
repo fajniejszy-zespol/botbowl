@@ -17,6 +17,12 @@ import ffai
 import random
 import time
 import numpy as np
+from uuid import uuid1
+import pathlib
+import warnings
+
+# Blokuje wyświetlanie FutureWarningów
+warnings.simplefilter(action='ignore', category=FutureWarning)
 
 # Training configuration
 num_steps = 1000000
@@ -53,19 +59,6 @@ selfplay_swap_steps = int(selfplay_save_steps / (2*selfplay_window))
 # Architecture
 num_hidden_nodes = 128
 num_cnn_kernels = [32, 64]
-
-model_name = env_name
-log_filename = "logs/" + model_name + ".dat"
-
-
-def ensure_dir(file_path):
-    directory = os.path.dirname(file_path)
-    if not os.path.exists(directory):
-        os.makedirs(directory)
-
-ensure_dir("logs/")
-ensure_dir("models/")
-ensure_dir("plots/")
 
 # --- Reward function ---
 rewards_own = {
@@ -235,7 +228,7 @@ def main():
     selfplay_next_swap = selfplay_swap_steps
     selfplay_models = 0
     if selfplay:
-        model_path = f"models/{model_name}_selfplay_0"
+        model_path = f"{MODEL_ROOT}/{model_name}_selfplay_0"
         torch.save(ac_agent, model_path)
         envs.swap(A2CAgent(name=f"selfplay-0", env_name=env_name, filename=model_path))
         selfplay_models += 1
@@ -366,7 +359,7 @@ def main():
         # Self-play save
         if selfplay and all_steps >= selfplay_next_save:
             selfplay_next_save = max(all_steps+1, selfplay_next_save+selfplay_save_steps)
-            model_path = f"models/{model_name}_selfplay_{selfplay_models}"
+            model_path = f"{MODEL_ROOT}/{model_name}_selfplay_{selfplay_models}"
             print(f"Saving {model_path}")
             torch.save(ac_agent, model_path)
             selfplay_models += 1
@@ -376,7 +369,7 @@ def main():
             selfplay_next_swap = max(all_steps + 1, selfplay_next_swap+selfplay_swap_steps)
             lower = max(0, selfplay_models-1-(selfplay_window-1))
             i = random.randint(lower, selfplay_models-1)
-            model_path = f"models/{model_name}_selfplay_{i}"
+            model_path = f"{MODEL_ROOT}/{model_name}_selfplay_{i}"
             print(f"Swapping opponent to {model_path}")
             envs.swap(A2CAgent(name=f"selfplay-{i}", env_name=env_name, filename=model_path))
 
@@ -421,7 +414,7 @@ def main():
             policy_losses.clear()
 
             # Save model
-            torch.save(ac_agent, "models/" + model_name)
+            torch.save(ac_agent, f"{MODEL_ROOT}/" + model_name)
             
             # plot
             n = 3
@@ -453,7 +446,7 @@ def main():
                 axs[3].set_yticks(np.arange(0, 1.001, step=0.1))
                 axs[3].set_xlim(left=0)
             fig.tight_layout()
-            fig.savefig(f"plots/{model_name}{'_selfplay' if selfplay else ''}.png")
+            fig.savefig(f"{PLOT_ROOT}/{model_name}{'_selfplay' if selfplay else ''}.png")
             plt.close('all')
             
             # plot 2
@@ -491,11 +484,11 @@ def main():
                 axs2[4].set_xlim(left=0)
                 
             fig2.tight_layout()
-            fig2.savefig(f"plots/{model_name}_new_plots_{'_selfplay' if selfplay else ''}.png")
+            fig2.savefig(f"{PLOT_ROOT}/{model_name}_new_plots_{'_selfplay' if selfplay else ''}.png")
             plt.close('all')
 
 
-    torch.save(ac_agent, "models/" + model_name)
+    torch.save(ac_agent, f"{MODEL_ROOT}/" + model_name)
     envs.close()
 
 
@@ -535,6 +528,26 @@ def make_env(worker_id):
     env = gym.make(env_name)
     return env
 
-
 if __name__ == "__main__":
+    SESSION_ID = uuid1()
+    SESSION_ROOT = f'sessions/{SESSION_ID}'
+    LOG_ROOT = f'{SESSION_ROOT}/logs'
+    MODEL_ROOT = f'{SESSION_ROOT}/models'
+    PLOT_ROOT = f'{SESSION_ROOT}/plots'
+
+    model_name = env_name
+    log_filename = f"{LOG_ROOT}/{model_name}.dat"
+
+    # Tworzy wszystkie potrzebne pliki w sesji, z jakiegoś powodu sama funkcja ensure dirs odmawiała współpracy
+    pathlib.Path('sessions/' + str(SESSION_ID)).mkdir(parents=True, exist_ok=True)
+    pathlib.Path('sessions/' + str(SESSION_ID) + '/logs').mkdir(parents=True, exist_ok=True)
+    pathlib.Path('sessions/' + str(SESSION_ID) + '/models').mkdir(parents=True, exist_ok=True)
+    pathlib.Path('sessions/' + str(SESSION_ID) + '/plot').mkdir(parents=True, exist_ok=True)
+
+    print(f'Current session id: {SESSION_ID}')
+    print(f'\tlogs:   {LOG_ROOT}')
+    print(f'\tmodels: {MODEL_ROOT}')
+    print(f'\tplots:  {PLOT_ROOT}')
+    print()
+
     main()
