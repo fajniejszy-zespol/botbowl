@@ -12,8 +12,8 @@ import matplotlib.pyplot as plt
 import sys
 
 # Architecture
-model_name = 'FFAI-v3'
-env_name = 'FFAI-v3'
+model_name = 'FFAI-3-v2'
+env_name = 'FFAI-3-v2'
 model_filename = "models/" + model_name
 log_filename = "logs/" + model_name + ".dat"
 
@@ -269,7 +269,7 @@ if __name__ == "__main__":
 if __name__ == "__main__":
 
     # Load configurations, rules, arena and teams
-    config = ffai.load_config("ff-1")
+    config = ffai.load_config("ff-3")
     config.competition_mode = False
     ruleset = ffai.load_rule_set(config.ruleset)
     arena = ffai.load_arena(config.arena)

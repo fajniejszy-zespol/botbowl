@@ -28,19 +28,20 @@ entropy_coef = 0.01
 value_loss_coef = 0.5
 max_grad_norm = 0.05
 log_interval = 500
-save_interval = 500
+save_interval = 1000
 ppcg = True
 
 # Environment
-#env_name = "FFAI-1-v2"
-env_name = "FFAI-3-v2"
-num_steps = 5000000 # Increase training time
-log_interval = 1000
-#env_name = "FFAI-5-v2"
+env_name = "FFAI-1-v3"
+#env_name = "FFAI-3-v3"
+#num_steps = 5000000 # Increase training time
+#log_interval = 1000
+#save_interval = 2000
+#env_name = "FFAI-5-v3"
 #num_steps = 100000000 # Increase training time
 #log_interval = 1000
 #save_interval = 5000
-# env_name = "FFAI-v2"
+# env_name = "FFAI-v3"
 reset_steps = 5000  # The environment is reset after this many steps it gets stuck
 
 # Self-play
@@ -69,7 +70,7 @@ ensure_dir("plots/")
 # --- Reward function ---
 rewards_own = {
     OutcomeType.TOUCHDOWN: 1,
-    OutcomeType.CATCH: 0.1,
+    OutcomeType.SUCCESSFUL_CATCH: 0.1,
     OutcomeType.INTERCEPTION: 0.2,
     OutcomeType.SUCCESSFUL_PICKUP: 0.1,
     OutcomeType.FUMBLE: -0.1,
@@ -79,7 +80,7 @@ rewards_own = {
 }
 rewards_opp = {
     OutcomeType.TOUCHDOWN: -1,
-    OutcomeType.CATCH: -0.1,
+    OutcomeType.SUCCESSFUL_CATCH: -0.1,
     OutcomeType.INTERCEPTION: -0.2,
     OutcomeType.SUCCESSFUL_PICKUP: -0.1,
     OutcomeType.FUMBLE: 0.1,
