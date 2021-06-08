@@ -30,14 +30,14 @@ save_interval = 500
 ppcg = True
 
 # Environment
-#env_name = "FFAI-1-v2"
-env_name = "FFAI-3-v2"
-num_steps = 10000 # Increase training time
+# env_name = "FFAI-1-v2"
+env_name = "FFAI-11-v3"
+num_steps = 10000  # Increase training time
 log_interval = 100
-#env_name = "FFAI-5-v2"
-#num_steps = 100000000 # Increase training time
-#log_interval = 1000
-#save_interval = 5000
+# env_name = "FFAI-5-v2"
+# num_steps = 100000000 # Increase training time
+# log_interval = 1000
+# save_interval = 5000
 # env_name = "FFAI-v2"
 reset_steps = 5000  # The environment is reset after this many steps it gets stuck
 
@@ -60,6 +60,7 @@ def ensure_dir(file_path):
     if not os.path.exists(directory):
         os.makedirs(directory)
 
+
 ensure_dir("logs/")
 ensure_dir("models/")
 ensure_dir("plots/")
@@ -67,7 +68,7 @@ ensure_dir("plots/")
 # --- Reward function ---
 rewards_own = {
     OutcomeType.TOUCHDOWN: 1,
-    OutcomeType.CATCH: 0.1,
+    OutcomeType.SUCCESSFUL_CATCH: 0.1,
     OutcomeType.INTERCEPTION: 0.2,
     OutcomeType.SUCCESSFUL_PICKUP: 0.1,
     OutcomeType.FUMBLE: -0.1,
@@ -77,7 +78,7 @@ rewards_own = {
 }
 rewards_opp = {
     OutcomeType.TOUCHDOWN: -1,
-    OutcomeType.CATCH: -0.1,
+    OutcomeType.SUCCESSFUL_CATCH: -0.1,
     OutcomeType.INTERCEPTION: -0.2,
     OutcomeType.SUCCESSFUL_PICKUP: -0.1,
     OutcomeType.FUMBLE: 0.1,
@@ -180,8 +181,8 @@ class CNNPolicy(nn.Module):
         # Fully-connected layers
         x3 = self.linear1(concatenated)
         x3 = F.relu(x3)
-        #x2 = self.linear2(x2)
-        #x2 = F.relu(x2)
+        # x2 = self.linear2(x2)
+        # x2 = F.relu(x2)
 
         # Output streams
         value = self.critic(x3)
@@ -233,6 +234,7 @@ def reward_function(env, info, shaped=False):
         r += info['ball_progression'] * ball_progression_reward
     return r
 
+
 def worker(remote, parent_remote, env, worker_id):
     parent_remote.close()
 
@@ -259,7 +261,7 @@ def worker(remote, parent_remote, env, worker_id):
                     extra_endzone_squares = int((1.0 - dif) * 25.0)
                     distance_to_endzone = ball_carrier.position.x - 1
                     if distance_to_endzone <= extra_endzone_squares:
-                        #reward_shaped += rewards_own[OutcomeType.TOUCHDOWN]
+                        # reward_shaped += rewards_own[OutcomeType.TOUCHDOWN]
                         env.game.state.stack.push(Touchdown(env.game, ball_carrier))
             if done or steps >= reset_steps:
                 # If we  get stuck or something - reset the environment
@@ -331,7 +333,8 @@ class VecEnv():
             cumul_dones = np.stack(dones)
         else:
             cumul_dones |= np.stack(dones)
-        return np.stack(obs), cumul_rewards, cumul_shaped_rewards, cumul_tds_scored, cumul_tds_opp_scored, cumul_dones, infos
+        return np.stack(
+            obs), cumul_rewards, cumul_shaped_rewards, cumul_tds_scored, cumul_tds_opp_scored, cumul_dones, infos
 
     def reset(self, difficulty=1.0):
         for remote in self.remotes:
@@ -369,7 +372,9 @@ def main():
     board_dim = (spatial_obs_space[1], spatial_obs_space[2])
     board_squares = spatial_obs_space[1] * spatial_obs_space[2]
 
-    non_spatial_obs_space = es[0].observation_space.spaces['state'].shape[0] + es[0].observation_space.spaces['procedures'].shape[0] + es[0].observation_space.spaces['available-action-types'].shape[0]
+    non_spatial_obs_space = es[0].observation_space.spaces['state'].shape[0] + \
+                            es[0].observation_space.spaces['procedures'].shape[0] + \
+                            es[0].observation_space.spaces['available-action-types'].shape[0]
     non_spatial_action_types = FFAIEnv.simple_action_types + FFAIEnv.defensive_formation_action_types + FFAIEnv.offensive_formation_action_types
     num_non_spatial_action_types = len(non_spatial_action_types)
     spatial_action_types = FFAIEnv.positional_action_types
@@ -388,7 +393,7 @@ def main():
                 i += 1
             for action_type in spatial_action_types:
                 if ob['available-action-types'][action_type.name] == 0:
-                    mask[i:i+board_squares] = 0
+                    mask[i:i + board_squares] = 0
                 elif ob['available-action-types'][action_type.name] == 1:
                     position_mask = ob['board'][f"{action_type.name.replace('_', ' ').lower()} positions"]
                     position_mask_flatten = np.reshape(position_mask, (1, board_squares))
@@ -419,7 +424,8 @@ def main():
         pass
 
     # MODEL
-    ac_agent = CNNPolicy(spatial_obs_space, non_spatial_obs_space, hidden_nodes=num_hidden_nodes, kernels=num_cnn_kernels, actions=action_space)
+    ac_agent = CNNPolicy(spatial_obs_space, non_spatial_obs_space, hidden_nodes=num_hidden_nodes,
+                         kernels=num_cnn_kernels, actions=action_space)
 
     # OPTIMIZER
     optimizer = optim.RMSprop(ac_agent.parameters(), learning_rate)
@@ -497,8 +503,9 @@ def main():
                 }
                 action_objects.append(action_object)
 
-            obs, env_reward, shaped_reward, tds_scored, tds_opp_scored, done, info = envs.step(action_objects, difficulty=difficulty)
-            #envs.render()
+            obs, env_reward, shaped_reward, tds_scored, tds_opp_scored, done, info = envs.step(action_objects,
+                                                                                               difficulty=difficulty)
+            # envs.render()
 
             '''
             for j in range(len(obs)):
@@ -548,7 +555,8 @@ def main():
             memory.insert(step, spatial_obs, non_spatial_obs,
                           actions.data, values.data, shaped_reward, masks, action_masks)
 
-        next_value = ac_agent(Variable(memory.spatial_obs[-1], requires_grad=False), Variable(memory.non_spatial_obs[-1], requires_grad=False))[0].data
+        next_value = ac_agent(Variable(memory.spatial_obs[-1], requires_grad=False),
+                              Variable(memory.non_spatial_obs[-1], requires_grad=False))[0].data
 
         # Compute returns
         memory.compute_returns(next_value, gamma)
@@ -569,11 +577,11 @@ def main():
 
         advantages = Variable(memory.returns[:-1]) - values
         value_loss = advantages.pow(2).mean()
-        #value_losses.append(value_loss)
+        # value_losses.append(value_loss)
 
         # Compute loss
         action_loss = -(Variable(advantages.data) * action_log_probs).mean()
-        #policy_losses.append(action_loss)
+        # policy_losses.append(action_loss)
 
         optimizer.zero_grad()
 
@@ -597,7 +605,7 @@ def main():
 
         # Self-play save
         if selfplay and all_steps >= selfplay_next_save:
-            selfplay_next_save = max(all_steps+1, selfplay_next_save+selfplay_save_steps)
+            selfplay_next_save = max(all_steps + 1, selfplay_next_save + selfplay_save_steps)
             model_path = f"models/{model_name}_selfplay_{selfplay_models}"
             print(f"Saving {model_path}")
             torch.save(ac_agent, model_path)
@@ -605,9 +613,9 @@ def main():
 
         # Self-play swap
         if selfplay and all_steps >= selfplay_next_swap:
-            selfplay_next_swap = max(all_steps + 1, selfplay_next_swap+selfplay_swap_steps)
-            lower = max(0, selfplay_models-1-(selfplay_window-1))
-            i = random.randint(lower, selfplay_models-1)
+            selfplay_next_swap = max(all_steps + 1, selfplay_next_swap + selfplay_swap_steps)
+            lower = max(0, selfplay_models - 1 - (selfplay_window - 1))
+            i = random.randint(lower, selfplay_models - 1)
             model_path = f"models/{model_name}_selfplay_{i}"
             print(f"Swapping opponent to {model_path}")
             envs.swap(A2CAgent(name=f"selfplay-{i}", env_name=env_name, filename=model_path))
@@ -628,9 +636,9 @@ def main():
             episode_rewards.clear()
             win_rate = np.mean(wins)
             wins.clear()
-            #mean_value_loss = np.mean(value_losses)
-            #mean_policy_loss = np.mean(policy_losses)    
-            
+            # mean_value_loss = np.mean(value_losses)
+            # mean_policy_loss = np.mean(policy_losses)
+
             log_updates.append(all_updates)
             log_episode.append(all_episodes)
             log_steps.append(all_steps)
@@ -641,7 +649,8 @@ def main():
             log_difficulty.append(difficulty)
             timer = time.time() - starttime
             log = "Up: {}, Ep: {}, Steps: {}, Win: {:.2f}, TD: {:.2f}, TD_opp: {:.2f}, Rev: {:.3f}, Diff: {:.2f}, Time: {:.2f}" \
-                .format(all_updates, all_episodes, all_steps, win_rate, td_rate, td_rate_opp, mean_reward, difficulty, timer)
+                .format(all_updates, all_episodes, all_steps, win_rate, td_rate, td_rate_opp, mean_reward, difficulty,
+                        timer)
 
             log_to_file = "{}, {}, {}, {}, {}, {}, {}\n" \
                 .format(all_updates, all_episodes, all_steps, win_rate, td_rate, td_rate_opp, mean_reward, difficulty)
@@ -654,18 +663,18 @@ def main():
 
             # Save model
             torch.save(ac_agent, "models/" + model_name)
-            
+
             # plot
             n = 3
             if ppcg:
                 n += 1
-            fig, axs = plt.subplots(1, n, figsize=(4*n, 5))
-            axs[0].ticklabel_format(axis="x", style="sci", scilimits=(0,0))
+            fig, axs = plt.subplots(1, n, figsize=(4 * n, 5))
+            axs[0].ticklabel_format(axis="x", style="sci", scilimits=(0, 0))
             axs[0].plot(log_steps, log_mean_reward)
             axs[0].set_title('Reward')
-            #axs[0].set_ylim(bottom=0.0)
+            # axs[0].set_ylim(bottom=0.0)
             axs[0].set_xlim(left=0)
-            axs[1].ticklabel_format(axis="x", style="sci", scilimits=(0,0))
+            axs[1].ticklabel_format(axis="x", style="sci", scilimits=(0, 0))
             axs[1].plot(log_steps, log_td_rate, label="Learner")
             axs[1].set_title('TD/Episode')
             axs[1].set_ylim(bottom=0.0)
@@ -673,9 +682,9 @@ def main():
             if selfplay:
                 axs[1].ticklabel_format(axis="x", style="sci", scilimits=(0, 0))
                 axs[1].plot(log_steps, log_td_rate_opp, color="red", label="Opponent")
-            axs[2].ticklabel_format(axis="x", style="sci", scilimits=(0,0))
+            axs[2].ticklabel_format(axis="x", style="sci", scilimits=(0, 0))
             axs[2].plot(log_steps, log_win_rate)
-            axs[2].set_title('Win rate')            
+            axs[2].set_title('Win rate')
             axs[2].set_yticks(np.arange(0, 1.001, step=0.1))
             axs[2].set_xlim(left=0)
             if ppcg:
@@ -687,7 +696,6 @@ def main():
             fig.tight_layout()
             fig.savefig(f"plots/{model_name}{'_selfplay' if selfplay else ''}.png")
             plt.close('all')
-
 
     torch.save(ac_agent, "models/" + model_name)
     envs.close()
@@ -713,7 +721,7 @@ def update_obs(observations):
         procedures = list(obs['procedures'].values())
         actions = list(obs['available-action-types'].values())
 
-        non_spatial_ob = np.stack(state+procedures+actions)
+        non_spatial_ob = np.stack(state + procedures + actions)
 
         # feature_layers = np.expand_dims(feature_layers, axis=0)
         non_spatial_ob = np.expand_dims(non_spatial_ob, axis=0)
